@@ -15,10 +15,13 @@ You can embed Shiny inputs and outputs in your document. Outputs are automatical
 
 ```{r}
 # Load packages
+# library(BiocManager)
+# library(limma) #loess normalization
+# library(missForest) # imputation
+library(mixomics) #for NIPALS PCA
 # library(shiny)
 library(tidyverse)
 ```
-
 
 ```{r}
 sliderInput("bins", "Number of bins:", 
@@ -39,25 +42,44 @@ output$distPlot <- renderPlot({
 
 Parse files
 ```{r}
-wd <- setwd(getwd())
-mq_tables <- list.files(wd)
+mq_output <- "data-raw/"
+mq_tables <- list.files(mq_output)
 site_tables <- NULL
-for(table in mq_tables){
-   if (grep("Site", table[i])){
-      append(site_tables, table[i])
-   }
+for (t in mq_tables) {
+  if (str_detect(t, "Site")){
+    site_tables <- append(site_tables, t)
+  }
 }
+# from site_tables user selects sites of interest
 ```
 
 ```{r}
-load_data <- function(file_path){
-  files_input <- list.files(path = file_path)
-  tables <- apply(files_input, str_extract, pattern = "^(.+)Sites")
-  
-  for (i in filenames) {
-    filename
-  }
-  
-}
-```
+# Load FASTA file
+fasta_path <- file.choose()
 
+```
+summary from evidence:
+total number of sites
+enrichment efficiency
+peptides sharing modifications
+
+summary from sites:
+number of sites
+sites/protein
+correlations between replicates
+
+
+
+
+NIPALS PCA
+imputation:
+- msimpute
+- missforest
+NIPALS PCA
+Batch effect correction with ComBat
+RUV normalization (identify those proteins which change the least across sample)
+Normalization:
+- median
+- loess
+- quantile
+output boxplots and MA plots
