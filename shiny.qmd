@@ -25,7 +25,6 @@ library(tidyverse)
 ```
 
 # Functions
-
 ## Parse files
 ```{r}
 mq_output <- "data-raw/"
@@ -39,6 +38,7 @@ for (t in mq_tables) {
 # from site_tables user selects sites of interest
 ```
 
+### Load FASTA file for annotations
 ```{r}
 # Load FASTA file
 fasta_path <- file.choose()
@@ -46,22 +46,29 @@ fasta_path <- file.choose()
 ```
 
 ```{r}
-load_table <- function(df) {
+load_table <- function(df, multi) {
   
   cols <- c("Protein IDs",
-            "Gene names",
-            "Protein names",
-            matches("Intensity .*"),
             "Only identified by site",
             "Reverse",
             "Potential contaminant")
   
-  if (grep("Ratio", colnames()))
+  if (multi == "tmt") {
+    quant_colums <- paste0("matches(", "^(LFQ) |(I|i)ntensity .*", ")")
+    cols <- append(cols, quant_colums)
+  } else if (multi == "lfq") {
+    quant_colums <- paste0("matches(", "Reporter intensity (corrected|\\d)", ")")
+    cols <- append(cols, quant_colums)
+  } else {
+    quant_colums <- paste0("matches(", "Ratio .*", ")")
+    cols <- append(cols, quant_colums)
+  }
   
-  cols <- append(cols, )
-  
+  cols <- cols[grepl("Reporter intensity (corrected|\\d)", cols)]
+
   df <- readr::read_tsv(file = df,
                         col_select = cols)
+  return(df)
 }
 ```
 
