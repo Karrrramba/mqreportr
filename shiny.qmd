@@ -17,30 +17,16 @@ You can embed Shiny inputs and outputs in your document. Outputs are automatical
 # Load packages
 # library(BiocManager)
 # library(limma) #loess normalization
-# library(missForest) # imputation
-library(mixomics) #for NIPALS PCA
+# library(missForest) #amputation
+library(mixomics) #NIPALS PCA
+library(randomForest) #imputation
 # library(shiny)
 library(tidyverse)
 ```
 
-```{r}
-sliderInput("bins", "Number of bins:", 
-            min = 1, max = 50, value = 30)
-plotOutput("distPlot")
-```
+# Functions
 
-```{r}
-#| context: server
-output$distPlot <- renderPlot({
-   x <- faithful[, 2]  # Old Faithful Geyser data
-   bins <- seq(min(x), max(x), length.out = input$bins + 1)
-   hist(x, breaks = bins, col = 'darkgray', border = 'white',
-        xlab = 'Waiting time to next eruption (in mins)',
-        main = 'Histogram of waiting times')
-})
-```
-
-Parse files
+## Parse files
 ```{r}
 mq_output <- "data-raw/"
 mq_tables <- list.files(mq_output)
@@ -58,6 +44,40 @@ for (t in mq_tables) {
 fasta_path <- file.choose()
 
 ```
+
+```{r}
+load_table <- function(df) {
+  
+  cols <- c("Protein IDs",
+            "Gene names",
+            "Protein names",
+            matches("Intensity .*"),
+            "Only identified by site",
+            "Reverse",
+            "Potential contaminant")
+  
+  if (grep("Ratio", colnames()))
+  
+  cols <- append(cols, )
+  
+  df <- readr::read_tsv(file = df,
+                        col_select = cols)
+}
+```
+
+### Universal data cleaning
+Formats column names, removes reverse and contaminants 
+```{r}
+clean_df <- function(data) {
+  del_row <- which(data[, "Reverse"] == "+" | data[, "Potential contaminant"] == "+")
+  del_col <- which(names(data) %in% c("Reverse", "Potential contaminant"))
+  
+  data <- data[-del_row, -del_col]
+  data <- janitor::clean_names(data, abbreviation = "ID")
+  return(data)
+}
+```
+
 summary from evidence:
 total number of sites
 enrichment efficiency
@@ -69,9 +89,7 @@ sites/protein
 correlations between replicates
 
 
-
-
-NIPALS PCA
+NIPALS PCA for initial clustering
 imputation:
 - msimpute
 - missforest
