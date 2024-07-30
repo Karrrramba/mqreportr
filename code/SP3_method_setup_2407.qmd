@@ -1,0 +1,336 @@
+---
+title: "SP3_method_setup"
+author: "Michal Rackiewicz"
+format: html
+editor: visual
+---
+
+MaxQuant output (19/07/24)
+
+```{r}
+library(tidyverse)
+library(ggthemes)
+library(patchwork)
+library(ggpol)
+library(ggokabeito)
+```
+
+```{r}
+setwd("C:/data/Halle/raw_test_runs/faims_splits/combined/txt")
+```
+
+```{r}
+clean_data <- function(data) {
+  del_row <- which(data[, "Reverse"] == "+" | data[, "Potential contaminant"] == "+")
+  del_col <- which(names(data) %in% c("Reverse", "Potential contaminant"))
+
+  data <- data[-del_row, -del_col]
+  data <- janitor::clean_names(data, abbreviation = "ID")
+  return(data)
+}
+```
+
+## ProteinGroups
+```{r read data}
+protein_groups <- readr::read_tsv("proteinGroups.txt",
+                                    col_select =  c("Protein IDs",
+                                                  "Gene names",
+                                                  "Protein names",
+                                                  matches("Intensity .*"),
+                                                  "Only identified by site",
+                                                  "Reverse",
+                                                  "Potential contaminant"
+                                                  ))
+
+proteingroups_clean <- clean_data(protein_groups)
+```
+
+```{r}
+pg_long <- proteingroups_clean %>% 
+  select(!only_identified_by_site) %>% 
+  pivot_longer(cols = starts_with("intensity"),
+               names_to = "experiment",
+               values_to = "intensity") %>% 
+  mutate(intensity = log2(intensity)) %>% 
+  mutate(experiment = str_remove(experiment, "intensity_")) 
+```
+
+```{r boxplot intensities}
+pg_long %>% 
+  ggplot(aes(x = factor(experiment), y = intensity)) +
+  geom_boxplot(aes(color = experiment)) +
+  theme_tufte() +
+  geom_rangeframe() +
+  theme(legend.position = "none") +
+  ggtitle("Log2-transformed Protein Intensities") +
+  xlab('Experiment') +
+  ylab("Intensity") +
+  scale_color_okabe_ito()
+```
+```{r shared proteins}
+pg_long %>% 
+  filter(experiment %in% c("t2c", "t60c")) %>% 
+  group_by(protein_id_s) %>% 
+  filter(all(!is.infinite(intensity))) %>% 
+  distinct(protein_id_s) %>% 
+  nrow()
+```
+
+```{r valid values}
+pg_long %>% 
+  group_by(experiment) %>% 
+  summarise(valid_values = sum(!is.infinite(intensity))) 
+```
+
+Why only so few IDs in linker experiments?
+```{r}
+nem_sites <- readr::read_tsv("NEM (C)Sites.txt",
+                                    col_select =  c(
+                                      "Protein",
+                                                  "Gene names",
+                                                  "Protein names",
+                                                  matches("Intensity .*"),
+                                                  "Localization prob",
+                                                  "Sequence window",
+                                                  "Position",
+                                                  "Reverse",
+                                                  "Potential contaminant"
+                                                  ))
+nem_sites <- clean_data(nem_sites)
+
+```
+
+```{r}
+nem_transformed <- nem_sites %>% 
+  filter(localization_prob >= 0.75) %>% 
+  mutate(site = paste0(amino_acid, position)) %>% 
+  select(!c(position)) %>% 
+  mutate(across(matches("intensity"), ~log2(.x))) %>% 
+  mutate(across(matches("intensity"), ~if_else(is.infinite(.x), NaN, .x)))
+  
+```
+
+```{r}
+nem_long <- nem_transformed %>% 
+  pivot_longer(cols = ends_with(c("1", "2", "3")),
+               names_to = c("experiment", "multiplicity"),
+               names_pattern = "intensity_(.+)_(.)",
+               values_to = "intensity") %>% 
+  relocate(c(localization_prob, site, multiplicity), .after = protein_names) %>% 
+  select(!matches("intensity_"))
+```
+
+```{r}
+nem_long %>% 
+  group_by(experiment) %>% 
+  ggplot(aes(x = experiment, y = intensity)) +
+  geom_rangeframe() +
+  ggpol::geom_boxjitter(aes(fill = experiment)) +
+  theme_tufte() +
+  ggtitle("NEM Site Intensities") +
+  xlab("Experiment") +
+  ylab("Intensity") +
+  theme(legend.position = "none") +
+  scale_fill_okabe_ito()
+```
+
+```{r}
+nem_scaled <- nem_long %>% 
+  group_by(experiment) %>% 
+  mutate(intensity = intensity - median(intensity, na.rm = TRUE)) %>% 
+  ungroup()
+
+nem_scaled %>% 
+  group_by(experiment) %>% 
+  summarise(valid_values = sum(!is.nan(intensity))) %>% 
+  ggplot(aes(x = experiment, y = valid_values, fill = experiment)) +
+  geom_col() +
+  theme_tufte() +
+  geom_rangeframe() +
+  ggtitle("NEM sites") +
+  xlab("Experiment") +
+  ylab("Count") +
+  coord_flip() +
+  theme(legend.position = "none") +
+  scale_fill_okabe_ito()
+```
+```{r shared NEM sites}
+nem_scaled %>% 
+  filter(experiment %in% c("t2c", "t60c")) %>% 
+  group_by(protein, site, multiplicity) %>% 
+  filter(all(!is.nan(intensity))) %>% 
+  distinct(protein) %>% 
+  nrow()
+```
+
+```{r}
+nem_scaled %>% 
+  filter(experiment == c("t2c", "t60c")) %>% 
+  group_by(protein) %>% 
+  filter(protein = case_when(
+    
+  ))
+  
+```
+
+## Reduced Redoxsites (IAA)
+```{r}
+iaa_sites <- readr::read_tsv("Carbamidomethyl (C)Sites.txt",
+                                    col_select =  c(
+                                      "Protein",
+                                      "Gene names",
+                                      "Protein names",
+                                      matches("Intensity .*"),
+                                      "Localization prob",
+                                      "Sequence window",
+                                      "Amino acid",
+                                      "Position",
+                                      "Reverse",
+                                      "Potential contaminant"
+                                                  ))
+
+iaa_sites <- clean_data(iaa_sites)
+```
+```{r}
+iaa_transformed <- iaa_sites %>% 
+  filter(localization_prob >= 0.75) %>% 
+  mutate(site = paste0(amino_acid, position)) %>% 
+  select(!c(position)) %>% 
+  mutate(across(matches("intensity"), ~log2(.x))) %>% 
+  mutate(across(matches("intensity"), ~if_else(is.infinite(.x), NaN, .x)))
+```
+
+```{r}
+
+```
+
+
+## Phospho
+```{r}
+psty <- readr::read_tsv("Phospho (STY)Sites.txt",
+                                    col_select =  c(
+                                      "Protein",
+                                      "Gene names",
+                                      "Protein names",
+                                      matches("Intensity .*"),
+                                      "Localization prob",
+                                      "Sequence window",
+                                      "Amino acid",
+                                      "Position",
+                                      "Reverse",
+                                      "Potential contaminant"
+                                                  ))
+```
+```{r}
+psty <- clean_data(psty)
+```
+
+```{r}
+psty_transformed <- psty %>% 
+  filter(localization_prob >= 0.75) %>% 
+  mutate(site = paste0(amino_acid, position)) %>% 
+  select(!c(position, amino_acid)) %>% 
+  mutate(across(matches("intensity"), ~log2(.x))) %>% 
+  mutate(across(matches("intensity"), ~if_else(is.infinite(.x), NaN, .x)))
+```
+
+```{r}
+psty_long <- psty_transformed %>% 
+  pivot_longer(cols = ends_with(c("1", "2", "3")),
+               names_to = c("experiment", "multiplicity"),
+               names_pattern = "intensity_(.+)_(.)",
+               values_to = "intensity") %>% 
+  relocate(c(localization_prob, site, multiplicity), .after = protein_names) %>% 
+  select(!matches("intensity_"))
+
+psty_long <- psty_long %>% 
+  filter(grepl("linker", experiment))
+```
+
+```{r}
+psty_long %>% 
+  group_by(experiment) %>% 
+  ggplot(aes(x = experiment, y = intensity)) +
+  geom_rangeframe() +
+  ggpol::geom_boxjitter(aes(fill = experiment)) +
+  theme_tufte() +
+  ggtitle("Phosphosite log-transformed Intensities") +
+  xlab("Experiment") +
+  ylab("Intensity") +
+  theme(legend.position = "none") +
+  scale_fill_okabe_ito()
+```
+```{r}
+psty_scaled <- psty_long %>% 
+  group_by(experiment) %>% 
+  mutate(intensity = intensity - median(intensity, na.rm = TRUE)) %>% 
+  ungroup()
+
+psty_scaled %>% 
+  group_by(experiment) %>% 
+  summarise(valid_values = sum(!is.nan(intensity))) %>% 
+  ggplot(aes(x = experiment, y = valid_values, fill = experiment)) +
+  geom_col() +
+  theme_tufte() +
+  geom_rangeframe() +
+  ggtitle("pSTY sites") +
+  xlab("Experiment") +
+  ylab("Count") +
+  coord_flip() +
+  theme(legend.position = "none") +
+  scale_fill_okabe_ito()
+```
+```{r shared pSTY sites}
+psty_scaled %>% 
+  group_by(protein, site, multiplicity) %>% 
+  filter(all(!is.nan(intensity))) %>% 
+  distinct(protein) %>% 
+  nrow()
+```
+
+```{r}
+psty_scaled %>% 
+  group_by(experiment) %>% 
+  filter(!is.nan(intensity)) %>% 
+  reframe(n_proteins = length(unique(protein)),
+          n_sites= length(site)
+          )
+```
+
+(How many novel sites? Where?)
+
+## Evidence
+```{r}
+evidence <- read_delim("evidence.txt",
+                       col_select = c('Sequence',
+                                      'Modified sequence',
+                                      'Phospho (STY)',
+                                      'CysPAT',
+                                      'Missed cleavages',
+                                      'Experiment', 
+                                      'Reverse', 
+                                      'Potential contaminant')
+                        )
+```
+```{r}
+evidence <- clean_data(evidence)
+```
+
+```{r}
+evidence %>% 
+  count(experiment, missed_cleavages) %>% 
+  group_by(experiment) %>% 
+  mutate(prop = round(n / sum(n), 2)) %>% 
+  ggplot(aes(missed_cleavages, y = n)) +
+  geom_col() +
+  geom_text(aes(label = prop, hjust = 'middle')) +
+  theme_tufte() +
+  geom_rangeframe() +
+  ggtitle("Distribution of Missed Cleavages") +
+  ylab("Count") +
+  xlab("Experiment") +
+  coord_flip() +
+  facet_wrap( ~ experiment, scales = "free_x")
+  
+```
+

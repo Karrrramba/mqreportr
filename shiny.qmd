@@ -64,7 +64,7 @@ load_table <- function(df, multi) {
     cols <- append(cols, quant_colums)
   }
   
-  cols <- cols[grepl("Reporter intensity (corrected|\\d)", cols)]
+  cols <- cols[!grepl("count", cols)]
 
   df <- readr::read_tsv(file = df,
                         col_select = cols)
