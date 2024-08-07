@@ -72,8 +72,7 @@ list2env(
   envir = .GlobalEnv)
 
 ### Universal data cleaning----
-
-# Removes reverse and contaminants, filters sites to desired threshold
+# Removes reverse, contaminants and on;y id by site, filters sites to desired threshold
 clean_df <- function(data, prob_treshold = 0.9, remove_empty = TRUE) {
   del_row <- which(data[, "reverse"] == "+" | data[, "potential_contaminant"] == "+" | data[, "only_identified_by_site"] == "+")
   del_col <- which(names(data) %in% c("reverse", "potential_contaminant", "only_identified_by_site"))
@@ -88,15 +87,16 @@ clean_df <- function(data, prob_treshold = 0.9, remove_empty = TRUE) {
   return(data)
 }
 
-# Transform into long format
+# Transform into long format----
+# Helper function
 remove_empty_channels <- function(data){
   ch <- data %>% 
-    group_by(tmt_channel) %>% 
+    group_by(channel) %>% 
     summarise(values = length(unique(log2_intensity))) %>% 
     filter(values <= 2) %>% 
-    pull(tmt_channel)
+    pull(channel)
   
-  data <- filter(data, !tmt_channel %in% ch)
+  data <- filter(data, !channel %in% ch)
   
   return(data)
 }
@@ -117,9 +117,12 @@ transform_table <- function(data) {
       protein_id_s = gsub("(;.+)", "", protein_id_s),
       gene_names = gsub("(;.+)", "", gene_names),
     ) %>% 
-    remove_empty_channels(.) %>% 
-    # Log2 transform
+    # Log2-transform
     dplyr::mutate(log2_intensity = dplyr::if_else(log2_intensity != 0, log2(log2_intensity), 0))
+  
+  if ("channel" %in% names(data)){
+    data <- remove_empty_channels(data)
+  }
   
   return(data)
 }
@@ -169,6 +172,9 @@ rat_pg_annotated <- load_annotations(annotation = "annotation_file.csv", data = 
 
 
 # sites
+
+
+
 nem_sites <- readr::read_tsv("NEM (C)Sites.txt",
                              col_select =  c(
                                "Protein",
