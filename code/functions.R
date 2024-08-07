@@ -26,22 +26,27 @@ remove_prefix <- function(data){
 
 load_table <- function(data, quant) {
   
-  cols <- c("Protein IDs",
-            "Protein names", 
-            "Gene names", 
-            "Reverse",
-            "Potential contaminant",
-            "Only identified by site")
+  cols <- c(
+    "Protein names", 
+    "Gene names", 
+    "Reverse",
+    "Potential contaminant"
+    )
   
-  site_cols <- c("Amino acid", 
-                 "Site",
+  pg_cols <- c("Protein IDs",
+               "Only identified by site")
+  
+  site_cols <- c("Protein",
+                 "Amino acid", 
+                 "Position",
                  "Localization prob",
-                 "Multiplicity",
                  "Sequence window")
   
   # Add modification-relevant columns if applicable 
-  if (stringr::str_detect(data, "site")) {
+  if (stringr::str_detect(data, "Sites")) {
     cols <- c(cols, site_cols)
+  } else if(stringr::str_detect(data, "Groups")) {
+    cols <- c(cols, pg_cols)
   }
   
   # Select quantification columns based on quantification strategy
@@ -157,7 +162,6 @@ load_annotations <- function(annotation, data) {
 
 rat_pg_annotated <- load_annotations(a_file = "annotation_file.csv", rat_pg_long) 
 
-
 # proteinGroups----
 rat_pg <- load_table('data-raw/tmt_rat/proteinGroups.txt', quant = "tmt")
 rat_pg <- clean_df(rat_pg)
@@ -172,8 +176,8 @@ rat_pg_annotated <- load_annotations(annotation = "annotation_file.csv", data = 
 
 
 # sites
-
-
+rat_nem <- load_table("data-raw/NEM (C)Sites.txt", quant = 'tmt')
+rat_nem <- clean_df(rat_nem)
 
 nem_sites <- readr::read_tsv("NEM (C)Sites.txt",
                              col_select =  c(
