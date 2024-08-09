@@ -63,7 +63,7 @@ load_table <- function(data, quant) {
   } else {
     quant_regex <- "Ratio"
   }
-  print(quant_regex)
+
   d <- readr::read_tsv(file = data,
                        col_select = c(
                          cols,
@@ -73,7 +73,7 @@ load_table <- function(data, quant) {
     janitor::clean_names(., abbreviation = "ID")
   
   # Remove non-normalized intensity/ratio columns if applicable
-  d<- d[, !(grepl("^(reporter|lfq|ratio)", colnames(d)) & !grepl("(corrected|normalized)", colnames(d)))]
+  d <- d[, !(grepl("^(reporter|lfq|ratio)", colnames(d)) & !grepl("(corrected|normalized)", colnames(d)))]
 
   return(d)
 }
@@ -120,7 +120,7 @@ remove_empty_channels <- function(data){
   return(data)
 }
 
-transform_table <- function(data, site = FALSE) {
+transform_long <- function(data, site = FALSE) {
   data <- data %>% 
     tidyr::pivot_longer(
       cols = matches("^(reporter|lfq|ratio|intensity)"), 
@@ -130,48 +130,61 @@ transform_table <- function(data, site = FALSE) {
     dplyr::mutate(
       # Remove prefix
       sample = trimws(gsub("(reporter|lfq|ratio|intensity|corrected)", "", sample), which = "left", whitespace = "_"),
+      # Extract channel from sample name (not applicable for non-tmt as-is)
       channel = as.numeric(stringr::str_extract(sample, "^\\d+")),
       sample = gsub("^(\\d+_)", "", sample)
     ) %>% 
-    # Log2-transform
-    dplyr::mutate(log2_intensity = dplyr::if_else(log2_intensity != 0, log2(log2_intensity), 0))
+    # Log2-transformation 
+    dplyr::mutate(log2_intensity = dplyr::if_else(log2_intensity != 0, log2(log2_intensity), NA)) %>% 
+    dplyr::relocate(
+      channel, .after = sample
+    )
   
   if ("channel" %in% names(data)){
     data <- remove_empty_channels(data)
   }
-  
+  # Add sites and multiplicity for PTMs 
   if (site == TRUE){
     data <- data %>% 
       mutate(
         multiplicity = stringr::str_extract(sample, "\\d$"),
-        sample = gsub("_1-3]", "", sample),
+        sample = gsub("_[1-3]$", "", sample),
         site = paste0(amino_acid, position)
       ) %>% 
-      select(!c(amino_acid, position))
+      select(!c(amino_acid, position)) %>% 
+      relocate(c(site, multiplicity), .after = protein)
   }
   return(data)
 }
 
-
 # Experimental Design Templates----
 # Creates an annotation file in the working directory
-write_annotation_file <- function(data) {
+write_group_annotations_file <- function(data) {
   if ("channel" %in% names(data)){
-    a <- data %>% 
+    out <- data %>% 
       dplyr::group_by(sample) %>% 
       dplyr::reframe(channel = unique(channel)) %>% 
       dplyr::mutate(group1 = NA)
   } else {
-  a <- data.frame(sample = unique(data$sample),
+  out <- data.frame(sample = unique(data$sample),
                   group_1 = NA)
   }
   
-  write.csv(a, file = "annotation_file.csv", row.names = FALSE)
+  write.csv(
+    out, 
+    file = paste0(
+      deparse(substitute(data)), 
+      "_annotations_", 
+      format(Sys.time(), "%Y-%m-%d %H.%M"), 
+      ".csv"
+      ), 
+    row.names = FALSE
+  )
 }
 
 # Read annotation file and create groups based on column names
-load_annotations <- function(annotation, data) {
-  annotations <- readr::read_csv(a_file)
+load_group_annotations <- function(annotation_file, data) {
+  annotations <- readr::read_csv(annotation_file)
   
   # Merge annotations with data to create groups
   data <- data %>% 
