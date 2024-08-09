@@ -54,8 +54,7 @@ load_table <- function(data, quant) {
   } else if(stringr::str_detect(data, "Groups")) {
     cols <- c(cols, pg_cols)
   }
-  print(stringr::str_detect(data, "Sites"))
-  print(cols)
+
   # Select quantification columns based on quantification strategy
   if (quant == "lfq") {
     quant_regex <- "^(LFQ )|(I|i)ntensity .+"
@@ -121,7 +120,7 @@ remove_empty_channels <- function(data){
   return(data)
 }
 
-transform_table <- function(data) {
+transform_table <- function(data, site = FALSE) {
   data <- data %>% 
     tidyr::pivot_longer(
       cols = matches("^(reporter|lfq|ratio|intensity)"), 
@@ -141,6 +140,15 @@ transform_table <- function(data) {
     data <- remove_empty_channels(data)
   }
   
+  if (site == TRUE){
+    data <- data %>% 
+      mutate(
+        multiplicity = stringr::str_extract(sample, "\\d$"),
+        sample = gsub("_1-3]", "", sample),
+        site = paste0(amino_acid, position)
+      ) %>% 
+      select(!c(amino_acid, position))
+  }
   return(data)
 }
 
