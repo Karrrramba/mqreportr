@@ -2,23 +2,25 @@
 
 # Load packages
 # library(BiocManager)
-# library(COMBAT)
-# library(limma) #loess normalization
 # library(missForest) #amputation
-# library(mixomics) #NIPALS PCA
 # library(randomForest) #imputation
 library(tidyverse)
 
-## Parse files
-mq_output <- "data-raw/" #user input
-mq_tables <- list.files(mq_output, pattern = '\\.txt$')
-site_tables <- NULL
-for (t in mq_tables) {
-  if (str_detect(t, "Site")){
-    site_tables <- append(site_tables, t)
-  }
-}
+## Parse files----
+# mq_tables <- list.files(mq_output, pattern = '\\.txt$')
+# site_tables <- NULL
+# for (t in mq_tables) {
+#   if (str_detect(t, "Sites")){
+#     site_tables <- append(site_tables, t)
+#   }
+# }
 
+# Load all detected files into global env
+# list2env(
+#   lapply(setNames(site_tables, janitor::make_clean_names(site_tables)), load_table, multi = "lfq"),
+#   envir = .GlobalEnv)
+
+# Table loading----
 remove_prefix <- function(data){
   names(data) <- trimws(gsub("(reporter|lfq|ratio|intensity|corrected)", "", names(data)), which = "left", whitespace = "_")
   return(data)
@@ -33,14 +35,18 @@ load_table <- function(data, quant) {
     "Potential contaminant"
     )
   
-  pg_cols <- c("Protein IDs",
-               "Only identified by site")
+  pg_cols <- c(
+    "Protein IDs",
+    "Only identified by site"
+    )
   
-  site_cols <- c("Protein",
-                 "Amino acid", 
-                 "Position",
-                 "Localization prob",
-                 "Sequence window")
+  site_cols <- c(
+    "Protein",
+    "Amino acid", 
+    "Position",
+    "Localization prob",
+    "Sequence window"
+    )
   
   # Add modification-relevant columns if applicable 
   if (stringr::str_detect(data, "Sites")) {
@@ -48,46 +54,55 @@ load_table <- function(data, quant) {
   } else if(stringr::str_detect(data, "Groups")) {
     cols <- c(cols, pg_cols)
   }
-  
+  print(stringr::str_detect(data, "Sites"))
+  print(cols)
   # Select quantification columns based on quantification strategy
   if (quant == "lfq") {
-    quant_regex <- "^(LFQ) |(I|i)ntensity .*"
+    quant_regex <- "^(LFQ )|(I|i)ntensity .+"
   } else if (quant == "tmt") {
-    quant_regex <- "Reporter intensity (corrected|\\d)"
+    quant_regex <- "Reporter intensity"
   } else {
-    quant_regex <- "Ratio .*"
+    quant_regex <- "Ratio"
   }
-  
+  print(quant_regex)
   d <- readr::read_tsv(file = data,
-                        col_select = c(
-                          cols,
-                          matches(quant_regex))
-                        ) %>% 
+                       col_select = c(
+                         cols,
+                         matches(quant_regex)
+                         )
+                       ) %>% 
     janitor::clean_names(., abbreviation = "ID")
   
   # Remove non-normalized intensity/ratio columns if applicable
-  d_clean <- d[, !(grepl("^(reporter|lfq|ratio)", colnames(d)) & !grepl("(corrected|normalized)", colnames(d)))]
+  d<- d[, !(grepl("^(reporter|lfq|ratio)", colnames(d)) & !grepl("(corrected|normalized)", colnames(d)))]
 
-  return(d_clean)
+  return(d)
 }
-
-# Load all detected files into global env
-list2env(
-  lapply(setNames(site_tables, janitor::make_clean_names(site_tables)), load_table, multi = "lfq"),
-  envir = .GlobalEnv)
 
 ### Universal data cleaning----
 # Removes reverse, contaminants and on;y id by site, filters sites to desired threshold
-clean_df <- function(data, prob_treshold = 0.9, remove_empty = TRUE) {
-  del_row <- which(data[, "reverse"] == "+" | data[, "potential_contaminant"] == "+" | data[, "only_identified_by_site"] == "+")
-  del_col <- which(names(data) %in% c("reverse", "potential_contaminant", "only_identified_by_site"))
-  
+clean_df <- function(data, prob_treshold = 0.9) {
+  if("only" %in%  names(data)){
+    oisr <- which(data[, "only_identified_by_site"] == "+")
+    oisc <- which("only_identified_by_site" %in% names(data))
+    data <- data[-oisr, -oisc]
+  } 
+  # Remove decoy entries and conatminants
+  del_row <- which(data[, "reverse"] == "+" | data[, "potential_contaminant"] == "+")
+  del_col <- which(names(data) %in% c("reverse", "potential_contaminant"))
   data <- data[-del_row, -del_col]
   data <- data["localization_prob" >= prob_treshold, ]
   
-  if (remove_empty) {
-    data <- remove_empty_channels(data)
+  # Collapse protein ids and gene names to first entry
+  if("protein_id_s" %in% names(data)){
+    data <- rename(data, "protein" = "protein_id_s")
   }
+  
+  data <- data %>% 
+    mutate(
+      protein = gsub("(;.+)", "", protein),
+      gene_names = gsub("(;.+)", "", gene_names)
+    )
   
   return(data)
 }
@@ -117,10 +132,7 @@ transform_table <- function(data) {
       # Remove prefix
       sample = trimws(gsub("(reporter|lfq|ratio|intensity|corrected)", "", sample), which = "left", whitespace = "_"),
       channel = as.numeric(stringr::str_extract(sample, "^\\d+")),
-      sample = gsub("^(\\d+_)", "", sample),
-      # Collapse ID columns to first entry
-      protein_id_s = gsub("(;.+)", "", protein_id_s),
-      gene_names = gsub("(;.+)", "", gene_names),
+      sample = gsub("^(\\d+_)", "", sample)
     ) %>% 
     # Log2-transform
     dplyr::mutate(log2_intensity = dplyr::if_else(log2_intensity != 0, log2(log2_intensity), 0))
@@ -160,35 +172,3 @@ load_annotations <- function(annotation, data) {
   return(data)
 }
 
-rat_pg_annotated <- load_annotations(a_file = "annotation_file.csv", rat_pg_long) 
-
-# proteinGroups----
-rat_pg <- load_table('data-raw/tmt_rat/proteinGroups.txt', quant = "tmt")
-rat_pg <- clean_df(rat_pg)
-rat_pg_long <- transform_table(rat_pg)
-
-rat_pg_nc <- rat_pg_long %>% 
-  filter(grepl("nc", sample, fixed = TRUE))
-
-write_annotation_file(rat_pg_nc)
-
-rat_pg_annotated <- load_annotations(annotation = "annotation_file.csv", data = rat_pg_nc)
-
-
-# sites
-rat_nem <- load_table("data-raw/NEM (C)Sites.txt", quant = 'tmt')
-rat_nem <- clean_df(rat_nem)
-
-nem_sites <- readr::read_tsv("NEM (C)Sites.txt",
-                             col_select =  c(
-                               "Protein",
-                               "Gene names",
-                               "Protein names",
-                               matches("Intensity .*"),
-                               "Localization prob",
-                               "Sequence window",
-                               "Position",
-                               "Reverse",
-                               "Potential contaminant"
-                             ))
-nem_sites <- clean_data(nem_sites)
