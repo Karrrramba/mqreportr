@@ -4,6 +4,8 @@
 # library(BiocManager)
 # library(missForest) #amputation
 # library(randomForest) #imputation
+library(data.table)
+library(dtplyr)
 library(tidyverse)
 
 ## Parse files----
@@ -64,16 +66,18 @@ load_table <- function(data, quant) {
     quant_regex <- "Ratio"
   }
 
-  d <- readr::read_tsv(file = data,
+  d <- dtplyr::lazy_dt(readr::read_tsv(file = data,
                        col_select = c(
                          cols,
                          matches(quant_regex)
                          )
                        ) %>% 
-    janitor::clean_names(., abbreviation = "ID")
+    janitor::clean_names(., abbreviation = "ID")) %>% 
+    as.data.table()
   
   # Remove non-normalized intensity/ratio columns if applicable
-  d <- d[, !(grepl("^(reporter|lfq|ratio)", colnames(d)) & !grepl("(corrected|normalized)", colnames(d)))]
+  # d <- d[, !(grepl("^(reporter|lfq|ratio)", colnames(d)) & !grepl("(corrected|normalized)", colnames(d)))]
+  d <- d %>% select(!(starts_with("Reporter") & !matches("corrected")))
 
   return(d)
 }
@@ -82,26 +86,28 @@ load_table <- function(data, quant) {
 # Removes reverse, contaminants and on;y id by site, filters sites to desired threshold
 clean_df <- function(data, prob_treshold = 0.9) {
   if("only" %in%  names(data)){
-    oisr <- which(data[, "only_identified_by_site"] == "+")
-    oisc <- which("only_identified_by_site" %in% names(data))
-    data <- data[-oisr, -oisc]
+    data <- data %>% 
+      dtplyr::lazy_dt() %>% 
+      dplyr::filter(is.na(only_identified_by_site)) %>% 
+      dplyr::select(!only_identified_by_site) %>% 
+      data.table::as.data.table()
   } 
-  # Remove decoy entries and conatminants
-  del_row <- which(data[, "reverse"] == "+" | data[, "potential_contaminant"] == "+")
-  del_col <- which(names(data) %in% c("reverse", "potential_contaminant"))
-  data <- data[-del_row, -del_col]
-  data <- data["localization_prob" >= prob_treshold, ]
+  # Remove decoy entries and contaminants
+  data <- data %>% 
+    dtplyr::lazy_dt() %>%
+    dplyr::filter(is.na(reverse) & is.na(potential_contaminant)) %>% 
+    dplyr::filter(localization_prob >= prob_treshold) %>% 
+    dplyr::select(!c(reverse, potential_contaminant)) %>% 
+    dplyr::mutate(
+      protein = gsub("(;.+)", "", protein),
+      gene_names = gsub("(;.+)", "", gene_names)
+    ) %>% 
+    data.table::as.data.table()
   
   # Collapse protein ids and gene names to first entry
   if("protein_id_s" %in% names(data)){
     data <- rename(data, "protein" = "protein_id_s")
   }
-  
-  data <- data %>% 
-    mutate(
-      protein = gsub("(;.+)", "", protein),
-      gene_names = gsub("(;.+)", "", gene_names)
-    )
   
   return(data)
 }
