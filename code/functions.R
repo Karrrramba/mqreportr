@@ -69,15 +69,17 @@ load_table <- function(data, quant) {
   d <- dtplyr::lazy_dt(readr::read_tsv(file = data,
                        col_select = c(
                          cols,
-                         matches(quant_regex)
+                         tidyselect::matches(quant_regex)
                          )
                        ) %>% 
     janitor::clean_names(., abbreviation = "ID")) %>% 
-    as.data.table()
+    data.table::as.data.table()
   
   # Remove non-normalized intensity/ratio columns if applicable
   # d <- d[, !(grepl("^(reporter|lfq|ratio)", colnames(d)) & !grepl("(corrected|normalized)", colnames(d)))]
-  d <- d %>% select(!(starts_with("Reporter") & !matches("corrected")))
+  d <- d %>% dtplyr::lazy_dt() %>% 
+    dplyr::select(!(tidyselect::starts_with("Reporter") & !tidyselect::matches("corrected"))) %>% 
+    data.table::as.data.table()
 
   return(d)
 }
@@ -106,7 +108,7 @@ clean_df <- function(data, prob_treshold = 0.9) {
   
   # Collapse protein ids and gene names to first entry
   if("protein_id_s" %in% names(data)){
-    data <- rename(data, "protein" = "protein_id_s")
+    data <- dplyr::rename(data, "protein" = "protein_id_s")
   }
   
   return(data)
@@ -116,20 +118,23 @@ clean_df <- function(data, prob_treshold = 0.9) {
 # Helper function
 remove_empty_channels <- function(data){
   ch <- data %>% 
-    group_by(channel) %>% 
-    summarise(values = length(unique(log2_intensity))) %>% 
-    filter(values <= 2) %>% 
-    pull(channel)
+    dtplyr::lazy_dt() %>% 
+    dplyr::group_by(channel) %>% 
+    dplyr::summarise(values = length(dplyr::distinct(log2_intensity))) %>% 
+    dplyr::filter(values <= 2) %>% 
+    dplyr::pull(channel) %>% 
+    data.table::as.data.table()
   
-  data <- filter(data, !channel %in% ch)
+  data <- dplyr::filter(data, !channel %in% ch) #needs adjustment either to base R or dtplyr
   
   return(data)
 }
 
 transform_long <- function(data, site = FALSE) {
   data <- data %>% 
+    dtplyr::lazy_dt() %>% 
     tidyr::pivot_longer(
-      cols = matches("^(reporter|lfq|ratio|intensity)"), 
+      cols = tidyselect::matches("^(reporter|lfq|ratio|intensity)"), 
       names_to = "sample",
       values_to = "log2_intensity"
     ) %>% 
@@ -142,9 +147,8 @@ transform_long <- function(data, site = FALSE) {
     ) %>% 
     # Log2-transformation 
     dplyr::mutate(log2_intensity = dplyr::if_else(log2_intensity != 0, log2(log2_intensity), NA)) %>% 
-    dplyr::relocate(
-      channel, .after = sample
-    )
+    dplyr::relocate(channel, .after = sample) %>% 
+    data.table::as.data.table()
   
   if ("channel" %in% names(data)){
     data <- remove_empty_channels(data)
@@ -152,13 +156,15 @@ transform_long <- function(data, site = FALSE) {
   # Add sites and multiplicity for PTMs 
   if (site == TRUE){
     data <- data %>% 
-      mutate(
+      dtplyr::lazy_dt() %>% 
+      dplyr::mutate(
         multiplicity = stringr::str_extract(sample, "\\d$"),
         sample = gsub("_[1-3]$", "", sample),
         site = paste0(amino_acid, position)
       ) %>% 
-      select(!c(amino_acid, position)) %>% 
-      relocate(c(site, multiplicity), .after = protein)
+      dplyr::select(!c(amino_acid, position)) %>% 
+      dplyr::relocate(c(site, multiplicity), .after = protein) %>% 
+      data.table::as.data.table()
   }
   return(data)
 }
@@ -194,7 +200,9 @@ load_group_annotations <- function(annotation_file, data) {
   
   # Merge annotations with data to create groups
   data <- data %>% 
-    dplyr::left_join(., annotations, by = c("sample", "channel"), relationship = "many-to-many")
+    dtplyr::lazy_dt() %>% 
+    dplyr::left_join(., annotations, by = c("sample", "channel"), relationship = "many-to-many") %>% 
+    data.table::as.data.table()
   
   return(data)
 }
