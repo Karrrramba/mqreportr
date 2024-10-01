@@ -36,10 +36,25 @@ data_wide <- bench_data_clean %>%
   pivot_wider(names_from = "sample",
               values_from = "intensity") %>% 
   mutate(across(starts_with("tmt"), ~as.numeric(.))) 
-data_matrix <- data.matrix(data_wide)
+matrix_init <- data.matrix(data_wide)
 # set protein accession as row names
-row.names(data_matrix) <- data_matrix[, 1]
-data_matrix <- data_matrix[, -1]
+row.names(matrix_init) <- matrix_init[, 1]
+matrix_init <- data_matrix[, -1]
 
-init_pca <- nipals::nipals(data_matrix, fitted = TRUE)
-biplot(init_pca$scores, init_pca$loadings)
+pca_init <- nipals::nipals(matrix_init, fitted = TRUE)
+biplot(pca_init$scores, pca_init$loadings)
+
+# median normalization
+data_mean <- data_wide %>% 
+  mutate(across(starts_with("tmt"), ~ .x - mean(.x, na.rm = TRUE)))
+matrix_mean <- data.matrix(data_mean)
+
+  
+data_median <- data_wide %>% 
+  mutate(across(starts_with("tmt"), ~ .x - median(.x, na.rm = TRUE)))
+matrix_median <- data.matrix(data_median)
+
+
+data_harm
+
+# amputation
